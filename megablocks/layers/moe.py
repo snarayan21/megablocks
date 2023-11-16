@@ -316,10 +316,9 @@ class ParallelMLP(torch.nn.Module):
 
         # Start the cross-device permutation asynchronously so we can
         # overlap communication with computation.
-        parallel_x, parallel_x_handle = all_to_all(
+        parallel_x, _ = all_to_all(
             x, recv_counts, send_counts,
-            self.args.expert_parallel_group,
-            async_op=True)
+            self.args.expert_parallel_group)
 
         with torch.no_grad():
             # After we do the cross-device permutation we have the tokens on the
@@ -374,7 +373,7 @@ class ParallelMLP(torch.nn.Module):
 
         # Locally permute the tokens and perform the expert computation.
         # Block to make sure that the cross-device permutation is complete.
-        parallel_x_handle.wait()
+        # parallel_x_handle.wait()
         parallel_x = self.permute_and_compute(
             parallel_x,
             parallel_tokens_per_expert,
