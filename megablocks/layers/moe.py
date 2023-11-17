@@ -7,6 +7,7 @@ from megablocks.layers.arguments import Arguments
 import megablocks.ops as ops
 import numpy as np
 import torch
+import os
 
 
 _LOAD_BALANCING_LOSS = []
@@ -133,6 +134,15 @@ class ParallelMLP(torch.nn.Module):
             self.parallel_forward_once if
             args.moe_expert_model_parallelism else
             self.forward_once)
+        
+        world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+        world_rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+        gpu = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        ngpus_per_node=torch.cuda.device_count()
+
+        print("We are on local rank", gpu, "of", ngpus_per_node, "on node", world_rank, "of", world_size)
+        # Explicitly set device for this process group....?
+        torch.cuda.set_device(gpu)
 
     def expert_capacity(self, tokens):
         world_size = mpu.get_expert_parallel_world_size(self.args)
