@@ -50,6 +50,9 @@ class Arguments:
     init_method : InitFn =  partial(torch.nn.init.normal_, mean=0.0, std=0.02)
     output_layer_init_method : InitFn = init_method
 
+    # Int8 communication arguments.
+    int8_comm : bool = False
+
     # Benchmarking arguments.
     uniform_expert_assignment : bool = False
 

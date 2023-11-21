@@ -13,6 +13,13 @@ import torch
 def promote_scalar(x):
     return x.view(1) if not len(x.size()) else x
 
+class ToBF16(nn.Module):
+    def forward(self, x):
+        return x.to(torch.bfloat16)
+    
+class ToFP16(nn.Module):
+    def forward(self, x):
+        return x.to(torch.float16)
 
 class ParallelDroplessMLP(moe.ParallelMLP):
 

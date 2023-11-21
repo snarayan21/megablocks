@@ -309,6 +309,7 @@ class SparseMLP(torch.nn.Module):
             mpu.get_weight_parallel_world_size(args)
         )
 
+        # Initialize the MLP parameters in int8.
         self.w1 = torch.nn.Parameter(torch.empty(
             num_rows_per_rank,
             args.hidden_size,
@@ -356,8 +357,13 @@ class SparseMLP(torch.nn.Module):
         group = self.args.weight_parallel_group
         w1, w2 = (self.scale_grad(self.w1), self.scale_grad(self.w2))
         if self.args.memory_optimized_mlp:
-            return wp.memory_optimized_weight_parallel_mlp(
-                x, w1, w2, topo, group)
+            if self.args.int8_comm:
+                # Use weight parallel MLP that uses int8 for all-gathers.
+                return wp.memory_optimized_weight_parallel_mlp_int8_comm(
+                    x, w1, w2, topo, group, self.args)
+            else:
+                return wp.memory_optimized_weight_parallel_mlp(
+                    x, w1, w2, topo, group)
 
         # Compute the MLP.
         x = wp.sdd_nt(x, w1, topo, group)
