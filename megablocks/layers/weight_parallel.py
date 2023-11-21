@@ -355,7 +355,7 @@ class MemoryOptimizedWeightParallelMLP(torch.autograd.Function):
 memory_optimized_weight_parallel_mlp = MemoryOptimizedWeightParallelMLP.apply
 
 
-class MemoryOptimizedWeightParallelMLPInt8Comm(torch.autograd.Function):
+class MemoryOptimizedWeightParallelMLPInt8Comms(torch.autograd.Function):
     """Sparse MLP with manually scheduled memory reuse."""
 
     @staticmethod
@@ -502,4 +502,4 @@ class MemoryOptimizedWeightParallelMLPInt8Comm(torch.autograd.Function):
         dw1 = dw1.to(w1.dtype)
         return dx, dw1, dw2, None, None
 
-memory_optimized_weight_parallel_mlp_int8_comm = MemoryOptimizedWeightParallelMLPInt8Comm.apply
+memory_optimized_weight_parallel_mlp_int8_comms = MemoryOptimizedWeightParallelMLPInt8Comms.apply

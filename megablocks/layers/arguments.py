@@ -51,7 +51,7 @@ class Arguments:
     output_layer_init_method : InitFn = init_method
 
     # Int8 communication arguments.
-    int8_comm : bool = False
+    int8_comms : bool = False
 
     # Benchmarking arguments.
     uniform_expert_assignment : bool = False
