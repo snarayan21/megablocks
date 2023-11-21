@@ -24,11 +24,6 @@ class ToBF16(nn.Module):
     # Parametrization to convert weights to BF16
     def forward(self, x):
         return x.to(torch.bfloat16)
-    
-class ToFP32(nn.Module):
-    # Parametrization to convert weights to BF16
-    def forward(self, x):
-        return x.to(torch.float32)
 
 
 class ParallelDroplessMLP(moe.ParallelMLP):
@@ -49,14 +44,12 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         # If using int8 communication, add parametrizations for w1 and w2 
         # to decompress to computation type.
         if args.int8_comms:
-            # if args.fp16:
-            #     parametrize.register_parametrization(self.w1, "w1", ToFP16(), unsafe=True)
-            #     parametrize.register_parametrization(self.w2, "w2", ToFP16(), unsafe=True)
-            # if args.bf16:
-            #     parametrize.register_parametrization(self.w1, "w1", ToBF16(), unsafe=True)
-            #     parametrize.register_parametrization(self.w2, "w2", ToBF16(), unsafe=True)
-            parametrize.register_parametrization(self.mlp, "w1", ToFP32(), unsafe=True)
-            parametrize.register_parametrization(self.mlp, "w2", ToFP32(), unsafe=True)
+            if args.fp16:
+                parametrize.register_parametrization(self.w1, "w1", ToFP16(), unsafe=True)
+                parametrize.register_parametrization(self.w2, "w2", ToFP16(), unsafe=True)
+            if args.bf16:
+                parametrize.register_parametrization(self.w1, "w1", ToBF16(), unsafe=True)
+                parametrize.register_parametrization(self.w2, "w2", ToBF16(), unsafe=True)
 
         # Calculate the number of bits needed to represent the column indices
         # in the intermediate sparse matrix.
