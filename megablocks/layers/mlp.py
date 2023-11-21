@@ -37,7 +37,7 @@ def create_moe_expert_weights(args : Arguments,
     master_weights = torch.empty(
         num_experts, ffn_hidden_size, hidden_size,
         device=args.device,
-        dtype=torch.int8 if args.int8_comms else common.dtype(args))
+        dtype=torch.bfloat16 if args.int8_comms else torch.float32)
     init_method(master_weights)
 
     if not args.moe_expert_model_parallelism:
@@ -84,13 +84,13 @@ class MLP(torch.nn.Module):
             args.hidden_size,
             mpu.features_per_rank(args),
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
+            dtype=torch.bfloat16 if args.int8_comms else torch.float32))
         self.w2 = torch.nn.Parameter(torch.empty(
             experts_per_rank,
             mpu.features_per_rank(args),
             args.hidden_size,
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
+            dtype=torch.bfloat16 if args.int8_comms else torch.float32))
         mpu.set_expert_model_parallel_attributes(
             self.w1, args.moe_expert_model_parallelism)
         mpu.set_expert_model_parallel_attributes(
@@ -316,12 +316,12 @@ class SparseMLP(torch.nn.Module):
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
+            dtype=torch.bfloat16 if args.int8_comms else torch.float32))
         self.w2 = torch.nn.Parameter(torch.empty(
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
+            dtype=torch.bfloat16 if args.int8_comms else torch.float32))
 
         # Initialize the parameters for the MLP.
         #

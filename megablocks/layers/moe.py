@@ -123,7 +123,8 @@ class ParallelMLP(torch.nn.Module):
             self.bias = torch.nn.Parameter(torch.empty(
                 args.hidden_size,
                 device=args.device,
-                dtype=common.dtype(args)))
+                #dtype=common.dtype(args)))
+                dtype=torch.float32))
             torch.nn.init.zeros_(self.bias)
         else:
             self.register_parameter('bias', None)

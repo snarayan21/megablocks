@@ -33,7 +33,8 @@ class LearnedRouter(torch.nn.Module):
             args.hidden_size,
             args.moe_num_experts,
             bias=False,
-            dtype=common.dtype(args),
+            #dtype=common.dtype(args),
+            dtype=torch.float32,
             device=args.device)
         args.init_method(self.layer.weight)
 
