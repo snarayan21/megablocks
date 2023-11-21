@@ -33,10 +33,11 @@ def create_moe_expert_weights(args : Arguments,
     # Create the entire weight matrix such that the sampled weights will
     # not vary between data parallelism and expert model parallelism for
     # the same random seed.
+    # It using int8 communcation, this should be initialized to int8.
     master_weights = torch.empty(
         num_experts, ffn_hidden_size, hidden_size,
         device=args.device,
-        dtype=common.dtype(args))
+        dtype=torch.int8 if args.int8_comms else common.dtype(args))
     init_method(master_weights)
 
     if not args.moe_expert_model_parallelism:
@@ -77,18 +78,19 @@ class MLP(torch.nn.Module):
         expert_parallel_world_size = mpu.get_expert_parallel_world_size(args)
         experts_per_rank = mpu.experts_per_rank(args)
 
+        # If using int8 communication, parameters should have dtype int8.
         self.w1 = torch.nn.Parameter(torch.empty(
             experts_per_rank,
             args.hidden_size,
             mpu.features_per_rank(args),
             device=args.device,
-            dtype=common.dtype(args)))
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
         self.w2 = torch.nn.Parameter(torch.empty(
             experts_per_rank,
             mpu.features_per_rank(args),
             args.hidden_size,
             device=args.device,
-            dtype=common.dtype(args)))
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
         mpu.set_expert_model_parallel_attributes(
             self.w1, args.moe_expert_model_parallelism)
         mpu.set_expert_model_parallel_attributes(
@@ -309,16 +311,17 @@ class SparseMLP(torch.nn.Module):
             mpu.get_weight_parallel_world_size(args)
         )
 
+        # If using int8 communication, parameters should have dtype int8.
         self.w1 = torch.nn.Parameter(torch.empty(
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
-            dtype=common.dtype(args)))
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
         self.w2 = torch.nn.Parameter(torch.empty(
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
-            dtype=common.dtype(args)))
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)))
 
         # Initialize the parameters for the MLP.
         #
