@@ -86,14 +86,14 @@ class MLP(torch.nn.Module):
             mpu.features_per_rank(args),
             device=args.device,
             dtype=torch.int8 if args.parametrize and args.int8_comms else common.dtype(args)),
-            requires_grad=not(args.int8_comms))
+            requires_grad=not(args.parametrize and args.int8_comms))
         self.w2 = torch.nn.Parameter(torch.empty(
             experts_per_rank,
             mpu.features_per_rank(args),
             args.hidden_size,
             device=args.device,
             dtype=torch.int8 if args.parametrize and args.int8_comms else common.dtype(args)),
-            requires_grad=not(args.int8_comms))
+            requires_grad=not(args.parametrize and args.int8_comms))
         
         mpu.set_expert_model_parallel_attributes(
             self.w1, args.moe_expert_model_parallelism)
@@ -321,13 +321,13 @@ class SparseMLP(torch.nn.Module):
             args.hidden_size,
             device=args.device,
             dtype=torch.int8 if args.parametrize and args.int8_comms else common.dtype(args)),
-            requires_grad=not(args.int8_comms))
+            requires_grad=not(args.parametrize and args.int8_comms))
         self.w2 = torch.nn.Parameter(torch.empty(
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
             dtype=torch.int8 if args.parametrize and args.int8_comms else common.dtype(args)),
-            requires_grad=not(args.int8_comms))
+            requires_grad=not(args.parametrize and args.int8_comms))
 
         # Initialize the parameters for the MLP.
         #
