@@ -15,16 +15,26 @@ import torch.nn.utils.parametrize as parametrize
 def promote_scalar(x):
     return x.view(1) if not len(x.size()) else x
 
-class ToFP16(nn.Module):
+class ToFP16RequiresGrad(nn.Module):
     # Parametrization to convert weights to FP16
     def forward(self, x):
-        return x.to(torch.float16)
+        x = x.to(torch.float16)
+        x.requires_grad = True
+        return x
     
-class ToBF16(nn.Module):
+class ToBF16RequiresGrad(nn.Module):
     # Parametrization to convert weights to BF16
     def forward(self, x):
-        return x.to(torch.bfloat16)
-
+        x = x.to(torch.bfloat16)
+        x.requires_grad = True
+        return x
+    
+class ToFP32RequiresGrad(nn.Module):
+    # Parametrization to convert weights to FP32
+    def forward(self, x):
+        x = x.to(torch.float32)
+        x.requires_grad = True
+        return x
 
 class ParallelDroplessMLP(moe.ParallelMLP):
 
@@ -45,11 +55,11 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         # to decompress to computation type.
         if args.int8_comms:
             if args.fp16:
-                parametrize.register_parametrization(self.w1, "w1", ToFP16(), unsafe=True)
-                parametrize.register_parametrization(self.w2, "w2", ToFP16(), unsafe=True)
+                parametrize.register_parametrization(self.w1, "w1", ToFP16RequiresGrad(), unsafe=True)
+                parametrize.register_parametrization(self.w2, "w2", ToFP16RequiresGrad(), unsafe=True)
             if args.bf16:
-                parametrize.register_parametrization(self.w1, "w1", ToBF16(), unsafe=True)
-                parametrize.register_parametrization(self.w2, "w2", ToBF16(), unsafe=True)
+                parametrize.register_parametrization(self.w1, "w1", ToBF16RequiresGrad(), unsafe=True)
+                parametrize.register_parametrization(self.w2, "w2", ToBF16RequiresGrad(), unsafe=True)
 
         # Calculate the number of bits needed to represent the column indices
         # in the intermediate sparse matrix.
