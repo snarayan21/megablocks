@@ -39,7 +39,8 @@ def create_moe_expert_weights(args : Arguments,
     master_weights = torch.empty(
         num_experts, ffn_hidden_size, hidden_size,
         device=args.device,
-        dtype=torch.int8 if args.int8_comms else common.dtype(args))
+        dtype=torch.int8 if args.int8_comms else common.dtype(args),
+        requires_grad=not(args.int8_comms))
 
     if not args.moe_expert_model_parallelism:
         return master_weights
