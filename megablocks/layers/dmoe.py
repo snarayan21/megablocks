@@ -53,7 +53,7 @@ class ParallelDroplessMLP(moe.ParallelMLP):
 
         # If using int8 communication, add parametrizations for w1 and w2 
         # to decompress to computation type.
-        if args.int8_comms:
+        if args.parametrize and args.int8_comms:
             if args.fp16:
                 parametrize.register_parametrization(self.w1, "w1", ToFP16RequiresGrad(), unsafe=True)
                 parametrize.register_parametrization(self.w2, "w2", ToFP16RequiresGrad(), unsafe=True)

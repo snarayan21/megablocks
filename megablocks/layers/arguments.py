@@ -52,6 +52,7 @@ class Arguments:
 
     # Int8 communication arguments.
     int8_comms : bool = False
+    parametrize : bool = False
 
     # Benchmarking arguments.
     uniform_expert_assignment : bool = False
