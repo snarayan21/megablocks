@@ -39,8 +39,7 @@ def create_moe_expert_weights(args : Arguments,
     master_weights = torch.empty(
         num_experts, ffn_hidden_size, hidden_size,
         device=args.device,
-        dtype=torch.int8 if args.int8_comms else common.dtype(args),
-        requires_grad=not(args.int8_comms))
+        dtype=torch.int8 if args.int8_comms else common.dtype(args))
 
     if not args.moe_expert_model_parallelism:
         return master_weights
@@ -86,16 +85,14 @@ class MLP(torch.nn.Module):
             args.hidden_size,
             mpu.features_per_rank(args),
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args),
-            requires_grad=not(args.int8_comms)),
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)),
             requires_grad=not(args.int8_comms))
         self.w2 = torch.nn.Parameter(torch.empty(
             experts_per_rank,
             mpu.features_per_rank(args),
             args.hidden_size,
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args),
-            requires_grad=not(args.int8_comms)),
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)),
             requires_grad=not(args.int8_comms))
         
         mpu.set_expert_model_parallel_attributes(
@@ -323,15 +320,13 @@ class SparseMLP(torch.nn.Module):
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args),
-            requires_grad=not(args.int8_comms)),
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)),
             requires_grad=not(args.int8_comms))
         self.w2 = torch.nn.Parameter(torch.empty(
             num_rows_per_rank,
             args.hidden_size,
             device=args.device,
-            dtype=torch.int8 if args.int8_comms else common.dtype(args),
-            requires_grad=not(args.int8_comms)),
+            dtype=torch.int8 if args.int8_comms else common.dtype(args)),
             requires_grad=not(args.int8_comms))
 
         # Initialize the parameters for the MLP.
