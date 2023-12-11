@@ -56,6 +56,17 @@ class LearnedRouter(torch.nn.Module):
         scores = self.layer(x.view(-1, x.shape[-1])).softmax(dim=-1)
         expert_weights, expert_indices = self._top_k(scores)
 
+        # Normalize expert weights by euclidean norm to preserve output variance.
+        print("BEFORE NORMALIZING")
+        print(expert_weights.shape)
+        print(expert_weights)
+        expert_weights = torch.nn.functional.normalize(expert_weights, p=2, dim=-1)
+        print("AFTER NORMALIZING")
+        print(expert_weights.shape)
+        print(expert_weights.norm(p=2, dim=-1))
+        print(expert_weights)
+        print("_____________________________")
+
         expert_indices = (
             _uniform_expert_assignment(expert_indices, self.args.moe_num_experts)
             if self.args.uniform_expert_assignment else expert_indices
