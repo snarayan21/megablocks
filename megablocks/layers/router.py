@@ -1,5 +1,6 @@
 from megablocks.layers import common
 from megablocks.layers.arguments import Arguments
+from megablocks.layers.scaling import scaled_matmul
 import torch
 
 
@@ -29,13 +30,21 @@ class LearnedRouter(torch.nn.Module):
         # NOTE: This weight matrix is not parallelized with expert model
         # parallelism. Each device needs the entire router weight matrix
         # so that it can route its batch of data correctly.
-        self.layer = torch.nn.Linear(
-            args.hidden_size,
-            args.moe_num_experts,
-            bias=False,
-            dtype=common.dtype(args),
-            device=args.device)
-        args.init_method(self.layer.weight)
+        if args.unit_scaling:
+            self.layer = torch.nn.Parameter(torch.empty(
+                args.hidden_size,
+                args.moe_num_experts,
+                dtype=common.dtype(args),
+                device=args.device))
+            args.init_method(self.layer)
+        else:
+            self.layer = torch.nn.Linear(
+                args.hidden_size,
+                args.moe_num_experts,
+                bias=False,
+                dtype=common.dtype(args),
+                device=args.device)
+            args.init_method(self.layer.weight)
 
     def jitter(self, x):
         low = 1.0 - self.args.moe_jitter_eps
@@ -53,7 +62,10 @@ class LearnedRouter(torch.nn.Module):
         if self.training and self.args.moe_jitter_eps is not None:
             x = x * self.jitter(x)
 
-        scores = self.layer(x.view(-1, x.shape[-1])).softmax(dim=-1)
+        if self.args.unit_scaling:
+            scores = scaled_matmul(x.view(-1, x.shape[-1]), self.layer)
+        else:
+            scores = self.layer(x.view(-1, x.shape[-1])).softmax(dim=-1)
         expert_weights, expert_indices = self._top_k(scores)
 
         # Normalize expert weights by euclidean norm to preserve output variance.
