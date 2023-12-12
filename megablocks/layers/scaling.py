@@ -20,9 +20,12 @@ def scaled(X, alpha=1, beta=1):
     # Backward: grad_X = grad_Y * beta
     return ScaledGrad.apply(X, alpha, beta)
 
-def scaled_gmm(a, b, batch_sizes, trans_a=False, trans_b=False, c=None,
-               constrain_a=True, constrain_b=True):
-    (m, k), (_, n) = a.shape, b.shape
+def scaled_gmm(a, b, batch_sizes, trans_b=False, constrain_a=True, constrain_b=True):
+    (m, k) = a.shape
+    if trans_b:
+        n = b.shape[-2]
+    else:
+        n = b.shape[-1]
     alpha = k ** -(1/2)
     beta_a = n ** -(1/2)
     beta_b = m ** -(1/2)
@@ -39,8 +42,7 @@ def scaled_gmm(a, b, batch_sizes, trans_a=False, trans_b=False, c=None,
     b = scaled(b, beta=beta_b)
     
     # Scale down the matmul result, but only on the forwards pass
-    return scaled(gg.ops.gmm(a, b, batch_sizes, trans_a=trans_a, trans_b=trans_b, c=c),
-                  alpha=alpha)
+    return scaled(gg.ops.gmm(a, b, batch_sizes, trans_b=trans_b), alpha=alpha)
 
 def scaled_matmul(a, b, constrain_a=True, constrain_b=True):
     (m, k), (_, n) = a.shape, b.shape
