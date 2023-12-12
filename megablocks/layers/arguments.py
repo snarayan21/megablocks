@@ -54,6 +54,9 @@ class Arguments:
     # Benchmarking arguments.
     uniform_expert_assignment : bool = False
 
+    # Unit Scaling arguments.
+    unit_scaling: bool = False
+
     def __post_init__(self):
         for attr in ('quantize_inputs_num_bits',
                      'quantize_rematerialize_num_bits',
