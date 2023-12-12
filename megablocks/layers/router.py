@@ -63,7 +63,7 @@ class LearnedRouter(torch.nn.Module):
             x = x * self.jitter(x)
 
         if self.args.unit_scaling:
-            scores = scaled_matmul(x.view(-1, x.shape[-1]), self.layer)
+            scores = scaled_matmul(x.view(-1, x.shape[-1]), self.layer).softmax(dim=-1)
         else:
             scores = self.layer(x.view(-1, x.shape[-1])).softmax(dim=-1)
         expert_weights, expert_indices = self._top_k(scores)
