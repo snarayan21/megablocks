@@ -563,6 +563,8 @@ class ScaledMemoryOptimizedGroupedMLP(torch.autograd.Function):
         ctx.sdd_out_shape = sdd_out.shape
         ctx.dtype = x.dtype
         ctx.save_for_backward(w1, w2, batch_sizes,
+                              torch.tensor(expert_w1_matmul_scale, dtype=x.dtype),
+                              torch.tensor(expert_w2_matmul_scale, dtype=x.dtype),
                               torch.tensor(experts_w1_grad_scale, dtype=x.dtype),
                               torch.tensor(experts_w2_grad_scale, dtype=x.dtype),
                               *input_save_args)
@@ -582,13 +584,16 @@ class ScaledMemoryOptimizedGroupedMLP(torch.autograd.Function):
         saved_tensors = ctx.saved_tensors
         w1, w2 = saved_tensors[:2]
         batch_sizes = saved_tensors[2]
-        experts_w1_grad_scale, experts_w2_grad_scale = saved_tensors[3:5]
+        (expert_w1_matmul_scale,
+         expert_w2_matmul_scale,
+         experts_w1_grad_scale,
+         experts_w2_grad_scale) = saved_tensors[3:7]
 
         # Either 1 or 2 tensors for MLP input after the always-present tensors
         if ctx.num_input_bits == -1:
-            x = saved_tensors[5]
+            x = saved_tensors[7]
         else:
-            x_q, x_scales = saved_tensors[5:7]
+            x_q, x_scales = saved_tensors[7:9]
 
         # Either 1 or 2 tensors at the end for saved GELU input / sdd output
         if ctx.num_remat_bits == -1:
@@ -614,7 +619,7 @@ class ScaledMemoryOptimizedGroupedMLP(torch.autograd.Function):
         # NOTE: We reuse the gelu_out allocation.
         gg.backend.gmm(
             ddsd_out, w2, batch_sizes, trans_b=True, c=gelu_out)
-        dgelu_out = (1/0.588) * gelu_out
+        dgelu_out = (1/0.588) * expert_w2_matmul_scale * gelu_out
 
         # Compute dsdd_out.
         #
@@ -641,8 +646,8 @@ class ScaledMemoryOptimizedGroupedMLP(torch.autograd.Function):
         #
         # NOTE: This reuses the ddsd_out allocation.
         gg.backend.gmm(dsdd_out, w1, batch_sizes, c=ddsd_out)
-        dx = ddsd_out
-        return dx, dw1, dw2, None, None, None
+        dx = expert_w1_matmul_scale * ddsd_out
+        return dx, dw1, dw2, None, None, None, None, None, None, None
 
 scaled_memory_optimized_grouped_mlp = ScaledMemoryOptimizedGroupedMLP.apply
 
