@@ -4,6 +4,7 @@ from megablocks.layers import dmlp_registry
 from megablocks.layers import mpu
 from megablocks.layers import router
 from megablocks.layers.arguments import Arguments
+from megablocks.layers.scaling import scaled, top_k_softmax_std
 import megablocks.ops as ops
 import numpy as np
 import stk
@@ -20,6 +21,12 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         self.ffn_hidden_size = mpu.features_per_rank(args)
         self.blocking = 128
         self.mlp = dmlp_registry.get(args)
+
+        # Calculate needed scaling factors if using unit scaling
+        if args.unit_scaling:
+            top_k_scaling_param = top_k_softmax_std(dim=args.hidden_size, top_k=self.top_k)
+            self.weighted_experts_scale = 1/(top_k_scaling_param*(2*args.top_k)**0.5)*(1/0.913)
+            self.experts_weights_grad_scale = (1/args.hidden_size)**0.5
 
         # Calculate the number of bits needed to represent the column indices
         # in the intermediate sparse matrix.
@@ -198,16 +205,40 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         # Perform the expert computation.
         x = self.mlp(x, topo)
 
+        # Un-route the data for the MoE output.
+        if self.args.unit_scaling:
+            
+        else:
+            return ops.scatter(
+                x,
+                indices,
+                bin_ids,
+                expert_weights,
+                bins,
+                top_k,
+                self.args.quantize_scatter_num_bits)
+
 
         # Un-route the data for the MoE output.
-        return ops.padded_scatter(
-            x,
-            indices,
-            bin_ids,
-            expert_weights,
-            bins,
-            padded_bins,
-            top_k)
+        if self.args.unit_scaling:
+            return scaled(ops.padded_scatter(
+                scaled(x, beta=self.weighted_experts_scale),
+                indices,
+                bin_ids,
+                scaled(expert_weights, beta=self.experts_weights_grad_scale),
+                bins,
+                padded_bins,
+                top_k),
+                alpha=self.weighted_experts_scale)
+        else:
+            return ops.padded_scatter(
+                x,
+                indices,
+                bin_ids,
+                expert_weights,
+                bins,
+                padded_bins,
+                top_k)
 
     def grouped_forward_once(self, x, expert_weights, top_experts):
         # x: [sl, bs, hs]
@@ -254,14 +285,25 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         x = self.mlp(x, tokens_per_expert)
 
         # Un-route the data for the MoE output.
-        return ops.scatter(
-            x,
-            indices,
-            bin_ids,
-            expert_weights,
-            bins,
-            top_k,
-            self.args.quantize_scatter_num_bits)
+        if self.args.unit_scaling:
+            return scaled(ops.scatter(
+                scaled(x, beta=self.weighted_experts_scale),
+                indices,
+                bin_ids,
+                scaled(expert_weights, beta=self.experts_weights_grad_scale),
+                bins,
+                top_k,
+                self.args.quantize_scatter_num_bits),
+                alpha=self.weighted_experts_scale)
+        else:
+            return ops.scatter(
+                x,
+                indices,
+                bin_ids,
+                expert_weights,
+                bins,
+                top_k,
+                self.args.quantize_scatter_num_bits)
 
     def forward_once(self, x, expert_weights, top_experts):
         if self.args.grouped_mlp:
@@ -309,7 +351,7 @@ class dMoE(torch.nn.Module):
         # Token router.
         self.router = router.LearnedRouter(args)
 
-        # Expert computation helper.
+        # Expert computation  helper.
         self.experts = ParallelDroplessMLP(args)
 
     def forward(self, x):

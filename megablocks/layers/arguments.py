@@ -56,6 +56,7 @@ class Arguments:
 
     # Unit Scaling arguments.
     unit_scaling: bool = False
+    ddp_tokens: int = 1
 
     def __post_init__(self):
         for attr in ('quantize_inputs_num_bits',

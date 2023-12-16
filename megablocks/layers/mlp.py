@@ -5,7 +5,7 @@ from megablocks.layers import weight_parallel as wp
 from megablocks.layers.arguments import Arguments, InitFn
 from megablocks import turbo_util as turbo
 from megablocks import grouped_gemm_util as gg
-from megablocks.layers.scaling import scaled_gmm, scaled_gelu
+from megablocks.layers.scaling import scaled_gmm_custom_bwd, scaled_gelu, top_k_softmax_std
 import stk
 import torch
 import torch.nn.functional as F
@@ -310,6 +310,21 @@ class SparseMLP(torch.nn.Module):
             mpu.get_weight_parallel_world_size(args)
         )
 
+        # Initialize required scaling parameters if unit scaling
+        if self.args.unit_scaling:
+            top_k_scaling_param = top_k_softmax_std(dim=args.hidden_size, top_k=args.moe_top_k)
+            self.expert_w1_matmul_scale = (1/args.hidden_size)**0.5
+            self.expert_w2_matmul_scale = (1/(args.ffn_hidden_size))**0.5
+            gelu_forwards_scale = 1/0.588
+            gelu_backwards_scale = 1/0.675
+            gelu_ei_grad_scale = (1/args.hidden_size)**0.5
+            expert_results_grad_scale = 1/(top_k_scaling_param*2**0.5)
+            weighted_experts_scale = 1/(top_k_scaling_param*(2*args.moe_top_k)**0.5)*(1/0.913)
+
+            avg_tokens_per_expert = (args.ddp_tokens*args.moe_top_k)/args.moe_num_experts
+            self.experts_w1_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/1.297)*((gelu_backwards_scale*gelu_ei_grad_scale*expert_results_grad_scale)/(weighted_experts_scale*self.expert_w2_matmul_scale*gelu_forwards_scale))
+            self.experts_w2_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/1.423)*(expert_results_grad_scale/weighted_experts_scale)
+
         self.w1 = torch.nn.Parameter(torch.empty(
             self._num_rows_per_rank,
             args.hidden_size,
@@ -502,6 +517,131 @@ class MemoryOptimizedGroupedMLP(torch.autograd.Function):
 
 memory_optimized_grouped_mlp = MemoryOptimizedGroupedMLP.apply
 
+class ScaledMemoryOptimizedGroupedMLP(torch.autograd.Function):
+    """GroupedMLP with manually scheduled memory reuse and unit scaling."""
+
+    @staticmethod
+    @torch.cuda.amp.custom_fwd
+    def forward(ctx, x, w1, w2, batch_sizes, num_input_bits, num_remat_bits,
+                expert_w1_matmul_scale, expert_w2_matmul_scale, experts_w1_grad_scale, experts_w2_grad_scale):
+        # x: [m, k], w1: [n, k], w2: [n, k]
+        if (not x.is_contiguous() or not w1.is_contiguous() or
+            not w2.is_contiguous()):
+            raise ValueError("Expected contiguous 'x', 'w1' and 'w2'.")
+
+        # Layer 0: x @ w1.t().
+        sdd_out = expert_w1_matmul_scale * gg.backend.gmm(x, w1, batch_sizes, trans_b=True)
+
+        # Save input tensor, quantizing if needed
+        input_save_args = (x,)
+        if num_input_bits != -1:
+            x_q, x_scales = turbo.quantize_signed(x, num_bits=num_input_bits)
+            input_save_args = (x_q, x_scales)
+
+        # GeLU.
+        if num_remat_bits == -1:
+            gelu_out = scaled_gelu(sdd_out, approximate="tanh")
+            input_save_args += (sdd_out,)
+        else:
+            # Fused GELU into sdd_out buffer while quantizing input
+            hidden_q, hidden_scales, gelu_out_data = turbo.quantize_signed(
+                sdd_out, num_bits=num_remat_bits,
+                op=turbo.ElemwiseOps.GELU_FORWARD, x_forward=sdd_out)
+            gelu_out = (1/0.588)*sdd_out
+            input_save_args += (hidden_q, hidden_scales)
+
+        # Layer 1: x @ w2.
+        dsd_out = expert_w2_matmul_scale * gg.backend.gmm(gelu_out, w2, batch_sizes)
+
+        # NOTE: Save the input to the layer and the gelu input for
+        # gradient computation. We'll re-compute the gelu forward
+        # pass in the backward pass to avoid materializing another
+        # intermediate.
+        ctx.num_input_bits = num_input_bits
+        ctx.num_remat_bits = num_remat_bits
+        ctx.x_shape = x.shape
+        ctx.sdd_out_shape = sdd_out.shape
+        ctx.dtype = x.dtype
+        ctx.save_for_backward(w1, w2, batch_sizes, experts_w1_grad_scale, experts_w2_grad_scale, *input_save_args)
+        return dsd_out
+
+    @staticmethod
+    @torch.cuda.amp.custom_bwd
+    def backward(ctx, ddsd_out):
+        if (not ctx.needs_input_grad[0] or
+            not ctx.needs_input_grad[1] or
+            not ctx.needs_input_grad[2]):
+            raise ValueError("Expected all MLP inputs to need grad.")
+
+        # Unpack saved tensors; ugly because quantizing changes tensor count
+        #
+        dtype = ctx.dtype
+        saved_tensors = ctx.saved_tensors
+        w1, w2 = saved_tensors[:2]
+        batch_sizes = saved_tensors[2]
+        experts_w1_grad_scale, experts_w2_grad_scale = saved_tensors[3:5]
+
+        # Either 1 or 2 tensors for MLP input after the always-present tensors
+        if ctx.num_input_bits == -1:
+            x = saved_tensors[5]
+        else:
+            x_q, x_scales = saved_tensors[5:7]
+
+        # Either 1 or 2 tensors at the end for saved GELU input / sdd output
+        if ctx.num_remat_bits == -1:
+            sdd_out = saved_tensors[-1]
+        else:
+            hidden_q, hidden_scales = saved_tensors[-2:]
+
+        # Rematerialize gelu output.
+        if ctx.num_remat_bits == -1:
+            gelu_out = scaled_gelu(sdd_out, approximate="tanh")
+        else:
+            gelu_out = (1/0.588)*turbo.dequantize_signed(
+                hidden_q, hidden_scales, num_bits=ctx.num_remat_bits,
+                op=turbo.ElemwiseOps.GELU_FORWARD,
+                out_shape=ctx.sdd_out_shape, out_dtype=dtype)
+
+        # Compute dw2 with recomputed gelu output.
+        dw2 = experts_w2_grad_scale * gg.backend.gmm(
+            gelu_out, ddsd_out, batch_sizes, trans_a=True)
+
+        # Compute dgelu_out.
+        #
+        # NOTE: We reuse the gelu_out allocation.
+        gg.backend.gmm(
+            ddsd_out, w2, batch_sizes, trans_b=True, c=gelu_out)
+        dgelu_out = (1/0.588) * gelu_out
+
+        # Compute dsdd_out.
+        #
+        # NOTE: This reuses the dgelu_out allocation.
+        if ctx.num_remat_bits == -1:
+            dsdd_out = gelu.gelu_backward_(dgelu_out, sdd_out)
+        else:
+            # confusingly, x_out is interpreted as the gradient to overwrite
+            # in-place when the elemwise op is a backwards op
+            dsdd_out = turbo.dequantize_signed(
+                hidden_q, hidden_scales, num_bits=ctx.num_remat_bits,
+                op=turbo.ElemwiseOps.GELU_BACKWARD, x_out=dgelu_out.data)
+
+        # rematerialize MLP input now that we need it
+        if ctx.num_input_bits != -1:
+            x = turbo.dequantize_signed(
+                x_q, x_scales, num_bits=ctx.num_input_bits,
+                out_dtype=dtype, out_shape=ctx.x_shape)
+
+        # Compute dw1.
+        dw1 = experts_w1_grad_scale * gg.backend.gmm(dsdd_out, x, batch_sizes, trans_a=True)
+
+        # Compute dx.
+        #
+        # NOTE: This reuses the ddsd_out allocation.
+        gg.backend.gmm(dsdd_out, w1, batch_sizes, c=ddsd_out)
+        dx = ddsd_out
+        return dx, dw1, dw2, None, None, None
+
+scaled_memory_optimized_grouped_mlp = ScaledMemoryOptimizedGroupedMLP.apply
 
 class GroupedMLP(SparseMLP):
 
@@ -519,16 +659,26 @@ class GroupedMLP(SparseMLP):
                 "Weight parallelism not yet supported with GroupedMLP.")
 
         if self.args.memory_optimized_mlp:
-            return memory_optimized_grouped_mlp(
-                x, w1, w2, batch_sizes,
-                self.args.quantize_inputs_num_bits,
-                self.args.quantize_rematerialize_num_bits)
+            if self.args.unit_scaling:
+                return scaled_memory_optimized_grouped_mlp(
+                    x, w1, w2, batch_sizes,
+                    self.args.quantize_inputs_num_bits,
+                    self.args.quantize_rematerialize_num_bits,
+                    self.expert_w1_matmul_scale,
+                    self.expert_w2_matmul_scale,
+                    self.experts_w1_grad_scale,
+                    self.experts_w2_grad_scale)
+            else:
+                return memory_optimized_grouped_mlp(
+                    x, w1, w2, batch_sizes,
+                    self.args.quantize_inputs_num_bits,
+                    self.args.quantize_rematerialize_num_bits)
 
         # Compute the MLP.
         if self.args.unit_scaling:
-            x = scaled_gmm(x, w1, batch_sizes, trans_b=True)
+            x = scaled_gmm_custom_bwd(x, w1, batch_sizes, trans_b=True, b_bwd_scale=self.experts_w1_grad_scale)
             x = scaled_gelu(x, approximate="tanh")
-            return scaled_gmm(x, w2, batch_sizes)
+            return scaled_gmm_custom_bwd(x, w2, batch_sizes, b_bwd_scale=self.experts_w2_grad_scale)
         else:
             x = gg.ops.gmm(x, w1, batch_sizes, trans_b=True)
             x = F.gelu(x, approximate="tanh")
