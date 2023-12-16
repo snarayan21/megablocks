@@ -562,7 +562,10 @@ class ScaledMemoryOptimizedGroupedMLP(torch.autograd.Function):
         ctx.x_shape = x.shape
         ctx.sdd_out_shape = sdd_out.shape
         ctx.dtype = x.dtype
-        ctx.save_for_backward(w1, w2, batch_sizes, experts_w1_grad_scale, experts_w2_grad_scale, *input_save_args)
+        ctx.save_for_backward(w1, w2, batch_sizes,
+                              torch.tensor(experts_w1_grad_scale, dtype=x.dtype),
+                              torch.tensor(experts_w2_grad_scale, dtype=x.dtype),
+                              *input_save_args)
         return dsd_out
 
     @staticmethod
