@@ -312,7 +312,7 @@ class SparseMLP(torch.nn.Module):
 
         # Initialize required scaling parameters if unit scaling
         if self.args.unit_scaling:
-            top_k_scaling_param = top_k_softmax_std(dim=args.hidden_size, top_k=args.moe_top_k)
+            top_k_scaling_param = top_k_softmax_std(dim=args.moe_num_experts, top_k=args.moe_top_k)
             self.expert_w1_matmul_scale = (1/args.hidden_size)**0.5
             self.expert_w2_matmul_scale = (1/(args.ffn_hidden_size))**0.5
             gelu_forwards_scale = 1/0.588
@@ -322,8 +322,8 @@ class SparseMLP(torch.nn.Module):
             weighted_experts_scale = 1/(top_k_scaling_param*(2*args.moe_top_k)**0.5)*(1/0.913)
 
             avg_tokens_per_expert = (args.ddp_tokens*args.moe_top_k)/args.moe_num_experts
-            self.experts_w1_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/1.297)*((gelu_backwards_scale*gelu_ei_grad_scale*expert_results_grad_scale)/(weighted_experts_scale*self.expert_w2_matmul_scale*gelu_forwards_scale))
-            self.experts_w2_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/1.423)*(expert_results_grad_scale/weighted_experts_scale)
+            self.experts_w1_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/0.822)*((gelu_backwards_scale*gelu_ei_grad_scale*expert_results_grad_scale)/(weighted_experts_scale*self.expert_w2_matmul_scale*gelu_forwards_scale))
+            self.experts_w2_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/0.904)*(expert_results_grad_scale/weighted_experts_scale)
 
         self.w1 = torch.nn.Parameter(torch.empty(
             self._num_rows_per_rank,
@@ -674,7 +674,7 @@ class GroupedMLP(SparseMLP):
                     self.args.quantize_inputs_num_bits,
                     self.args.quantize_rematerialize_num_bits)
 
-        # Compute the MLP.
+        # Compute the MLP.m
         if self.args.unit_scaling:
             x = scaled_gmm_custom_bwd(x, w1, batch_sizes, trans_b=True, b_bwd_scale=self.experts_w1_grad_scale)
             x = scaled_gelu(x, approximate="tanh")

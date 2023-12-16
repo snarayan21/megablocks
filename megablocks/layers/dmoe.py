@@ -24,7 +24,7 @@ class ParallelDroplessMLP(moe.ParallelMLP):
 
         # Calculate needed scaling factors if using unit scaling
         if args.unit_scaling:
-            top_k_scaling_param = top_k_softmax_std(dim=args.hidden_size, top_k=self.top_k)
+            top_k_scaling_param = top_k_softmax_std(dim=args.moe_num_experts, top_k=self.top_k)
             self.weighted_experts_scale = 1/(top_k_scaling_param*(2*self.top_k)**0.5)*(1/0.913)
             self.experts_weights_grad_scale = (1/args.hidden_size)**0.5
 
