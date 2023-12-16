@@ -207,20 +207,6 @@ class ParallelDroplessMLP(moe.ParallelMLP):
 
         # Un-route the data for the MoE output.
         if self.args.unit_scaling:
-            
-        else:
-            return ops.scatter(
-                x,
-                indices,
-                bin_ids,
-                expert_weights,
-                bins,
-                top_k,
-                self.args.quantize_scatter_num_bits)
-
-
-        # Un-route the data for the MoE output.
-        if self.args.unit_scaling:
             return scaled(ops.padded_scatter(
                 scaled(x, beta=self.weighted_experts_scale),
                 indices,
