@@ -49,7 +49,7 @@ class LearnedRouter(torch.nn.Module):
 
         num_experts = self.args.moe_num_experts
         self.logits_grad_scale = (num_experts**4/(2*num_experts**2 - 4*num_experts + 8))**0.5
-        self.router_grad_scale = ((1/args.ddp_tokens)**0.5)
+        self.router_grad_scale = ((1/args.ddp_tokens)**0.5)*(1/0.922)
 
     def jitter(self, x):
         low = 1.0 - self.args.moe_jitter_eps
