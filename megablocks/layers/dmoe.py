@@ -26,7 +26,6 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         if args.unit_scaling:
             top_k_scaling_param = top_k_softmax_std(dim=args.moe_num_experts, top_k=self.top_k)
             self.weighted_experts_scale = 1/(top_k_scaling_param*(2*self.top_k)**0.5)*(1/0.867)
-            self.experts_weights_grad_scale = (1/args.hidden_size)**0.5*(1/args.residual_coeff)
 
         # Calculate the number of bits needed to represent the column indices
         # in the intermediate sparse matrix.
@@ -207,15 +206,14 @@ class ParallelDroplessMLP(moe.ParallelMLP):
 
         # Un-route the data for the MoE output.
         if self.args.unit_scaling:
-            return scaled(ops.padded_scatter(
-                scaled(x, beta=self.weighted_experts_scale),
+            return self.weighted_experts_scale*ops.padded_scatter(
+                x,
                 indices,
                 bin_ids,
-                scaled(expert_weights, beta=self.experts_weights_grad_scale),
+                expert_weights,
                 bins,
                 padded_bins,
-                top_k),
-                alpha=self.weighted_experts_scale)
+                top_k)
         else:
             return ops.padded_scatter(
                 x,
@@ -272,15 +270,14 @@ class ParallelDroplessMLP(moe.ParallelMLP):
 
         # Un-route the data for the MoE output.
         if self.args.unit_scaling:
-            return scaled(ops.scatter(
-                scaled(x, beta=self.weighted_experts_scale),
+            return self.weighted_experts_scale*ops.scatter(
+                x,
                 indices,
                 bin_ids,
-                scaled(expert_weights, beta=self.experts_weights_grad_scale),
+                expert_weights,
                 bins,
                 top_k,
-                self.args.quantize_scatter_num_bits),
-                alpha=self.weighted_experts_scale)
+                self.args.quantize_scatter_num_bits)
         else:
             return ops.scatter(
                 x,

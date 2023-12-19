@@ -1,6 +1,6 @@
 from megablocks.layers import common
 from megablocks.layers.arguments import Arguments
-from megablocks.layers.scaling import scaled_matmul_custom_bwd, scaled
+from megablocks.layers.scaling import scaled_matmul_custom_bwd, scaled, top_k_softmax_std
 import torch
 import torch.nn.functional as F
 
@@ -48,8 +48,11 @@ class LearnedRouter(torch.nn.Module):
             args.init_method(self.layer.weight)
 
         num_experts = self.args.moe_num_experts
-        self.logits_grad_scale = (num_experts**4/(2*num_experts**2 - 4*num_experts + 8))**0.5
-        self.router_grad_scale = ((1/args.ddp_tokens)**0.5)*(1/0.922)
+        top_k_scaling_param = top_k_softmax_std(dim=args.moe_num_experts, top_k=args.moe_top_k)
+        logits_grad_scale = (num_experts**4/(2*num_experts**2 - 4*num_experts + 8))**0.5
+        experts_weights_grad_scale = (1/args.hidden_size)**0.5*(1/args.residual_coeff)
+        weighted_experts_scale = 1/(top_k_scaling_param*(2*args.moe_top_k)**0.5)*(1/0.867)
+        self.router_grad_scale = ((1/args.ddp_tokens)**0.5)*(1/0.922)*logits_grad_scale*experts_weights_grad_scale/weighted_experts_scale
 
     def jitter(self, x):
         low = 1.0 - self.args.moe_jitter_eps
@@ -70,7 +73,7 @@ class LearnedRouter(torch.nn.Module):
 
         if self.args.unit_scaling:
             scores = scaled_matmul_custom_bwd(x.view(-1, x.shape[-1]), self.layer, b_bwd_scale=self.router_grad_scale)
-            scores = F.softmax(scaled(scores, beta=self.logits_grad_scale), dim=-1)
+            scores = F.softmax(scores, dim=-1)
         else:
             scores = self.layer(x.view(-1, x.shape[-1])).softmax(dim=-1)
         expert_weights, expert_indices = self._top_k(scores)
