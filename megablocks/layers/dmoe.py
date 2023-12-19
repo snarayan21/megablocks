@@ -26,7 +26,7 @@ class ParallelDroplessMLP(moe.ParallelMLP):
         if args.unit_scaling:
             top_k_scaling_param = top_k_softmax_std(dim=args.moe_num_experts, top_k=self.top_k)
             self.weighted_experts_scale = 1/(top_k_scaling_param*(2*self.top_k)**0.5)*(1/0.867)
-            self.experts_weights_grad_scale = (1/args.hidden_size)**0.5
+            self.experts_weights_grad_scale = (1/args.hidden_size)**0.5*(1/args.residual_coeff)**0.5
 
         # Calculate the number of bits needed to represent the column indices
         # in the intermediate sparse matrix.
