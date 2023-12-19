@@ -64,10 +64,6 @@ class LearnedRouter(torch.nn.Module):
 
 
     def forward(self, x):
-        if self.args.unit_scaling:
-            # If unit scaling, detach activations from router to preserve unit scaling
-            # of activation gradients on backwards.
-            x = x.detach()
         
         if self.training and self.args.moe_jitter_eps is not None:
             x = x * self.jitter(x)

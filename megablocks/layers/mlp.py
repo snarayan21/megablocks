@@ -322,8 +322,8 @@ class SparseMLP(torch.nn.Module):
             weighted_experts_scale = 1/(top_k_scaling_param*(2*args.moe_top_k)**0.5)*(1/0.867)
 
             avg_tokens_per_expert = (args.ddp_tokens*args.moe_top_k)/args.moe_num_experts
-            self.experts_w1_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/0.797)*((gelu_backwards_scale*gelu_ei_grad_scale*expert_results_grad_scale)/(weighted_experts_scale*self.expert_w2_matmul_scale*gelu_forwards_scale))*(1/args.residual_coeff)**0.5
-            self.experts_w2_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/0.883)*(expert_results_grad_scale/weighted_experts_scale)*(1/args.residual_coeff)**0.5
+            self.experts_w1_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/0.797)*((gelu_backwards_scale*gelu_ei_grad_scale*expert_results_grad_scale)/(weighted_experts_scale*self.expert_w2_matmul_scale*gelu_forwards_scale))*(1/args.residual_coeff)
+            self.experts_w2_grad_scale = (1/avg_tokens_per_expert)**0.5*(1/0.883)*(expert_results_grad_scale/weighted_experts_scale)*(1/args.residual_coeff)
 
         self.w1 = torch.nn.Parameter(torch.empty(
             self._num_rows_per_rank,
