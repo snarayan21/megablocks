@@ -48,7 +48,6 @@ class LearnedRouter(torch.nn.Module):
                 device=args.device,
                 b_bwd_scale = self.router_grad_scale
             )
-            args.init_method(self.layer)
         else:
             self.layer = torch.nn.Linear(
                 args.hidden_size,
@@ -56,7 +55,8 @@ class LearnedRouter(torch.nn.Module):
                 bias=False,
                 dtype=common.dtype(args),
                 device=args.device)
-            args.init_method(self.layer.weight)
+        
+        args.init_method(self.layer.weight)
 
     def jitter(self, x):
         low = 1.0 - self.args.moe_jitter_eps
