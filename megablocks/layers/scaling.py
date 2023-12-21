@@ -1,7 +1,10 @@
 import torch
+from torch import Tensor
 import torch.nn.functional as F
+from torch import nn
 from megablocks import grouped_gemm_util as gg
 import numpy as np
+from typing import Any, Optional
 
 # Scaling code based on Unit Scaling paper:
 # https://arxiv.org/abs/2303.11257
@@ -94,6 +97,52 @@ def scaled_matmul_custom_bwd(a, b, a_bwd_scale=None, b_bwd_scale=None):
     
     # Scale down the matmul result, but only on the forwards pass
     return scaled(torch.matmul(a, b), alpha=alpha)
+
+def scaled_linear_custom_bwd(
+    input: Tensor,
+    weight: Tensor,
+    bias: Optional[Tensor],
+    a_bwd_scale: Optional[float] = None,
+    b_bwd_scale: Optional[float] = None
+) -> Tensor:
+    k = input.shape[-1]
+    m = input.shape[-2]
+    # nn.Linear weights are stored as fan_out x fan_in.
+    n = weight.shape[-2]
+    if k != weight.shape[-1]:
+        raise ValueError(f"Scaled linear shared dimensions must match. \
+                         Got {k} and {weight.shape[-2]} instead.")
+
+    alpha = k**-(1/2)
+    beta_a = n**-(1/2)
+    beta_b_weight = beta_b_bias = m**-(1/2)
+
+    beta_a = alpha if a_bwd_scale is None else a_bwd_scale
+    beta_b_weight = alpha if b_bwd_scale is None else b_bwd_scale
+    beta_b_bias = alpha if b_bwd_scale is None else b_bwd_scale
+
+    input = scaled(input, beta=beta_a)
+    weight = scaled(weight, beta=beta_b_weight)
+    bias = scaled(bias, beta=beta_b_bias) if bias is not None else None
+    return scaled(F.linear(input, weight, bias), alpha=alpha)
+
+class ScaledLinearCustomBwd(nn.Linear):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        device: Any = None,
+        dtype: Any = None,
+        a_bwd_scale: Optional[float] = None,
+        b_bwd_scale: Optional[float] = None
+    ) -> None:
+        super().__init__(in_features, out_features, bias, device, dtype)
+        self.a_bwd_scale = a_bwd_scale
+        self.b_bwd_scale = b_bwd_scale
+
+    def forward(self, input: Tensor) -> Tensor:
+        return scaled_linear_custom_bwd(input, self.weight, self.bias, self.a_bwd_scale, self.b_bwd_scale)
 
 def scaled_gelu(X, approximate="tanh"):
     # This is kinda troll lol. Scaling up to correct for variance shrinkage from GeLU.
